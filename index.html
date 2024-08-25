@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Sell-By Date and Quantity Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        h1, h2 {
+            margin-bottom: 10px;
+        }
+        .summary, .out-of-date {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+        button {
+            margin: 5px;
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #e0e0e0;
+        }
+        input[type="number"],
+        input[type="date"],
+        input[type="file"],
+        input[type="checkbox"] {
+            padding: 5px;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        input[type="number"] {
+            width: 60px;
+        }
+        input[type="date"] {
+            width: 180px;
+        }
+        input[type="file"] {
+            margin-top: 10px;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        table, th, td {
+            border: 1px solid #ccc;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .checked-off {
+            text-decoration: line-through;
+            color: grey;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Inventory Sell-By Date and Quantity Tracker</h1>
+
+    <!-- JSON File Upload -->
+    <div id="fileUpload">
+        <h2>Loading Inventory JSON File</h2>
+        <button onclick="loadJSON()">Load JSON from GitHub</button>
+    </div>
+
+    <!-- Section selection screen -->
+    <div id="sectionSelect" style="display: none;">
+        <h2>Select a Section to Track</h2>
+        <div id="sectionButtons"></div>
+    </div>
+
+    <!-- Sell-By Date and Quantity input screen -->
+    <div id="question" style="display: none;">
+        <h2 id="currentItem">Loading...</h2>
+        <input type="date" id="sellByDate" placeholder="Sell-By Date">
+        <input type="number" id="itemQuantity" min="0" placeholder="Quantity">
+        <button onclick="submitAnswer()">Next</button>
+        <button onclick="goBack()">Go Back</button>
+        <button onclick="completeSection()">Complete</button>
+        <button onclick="cancelSection()">Cancel</button>
+    </div>
+
+    <!-- Summary screen -->
+    <div id="summary" class="summary">
+        <h2>Summary of Items, Quantities, and Sell-By Dates</h2>
+        <ul id="summaryList"></ul>
+        <button onclick="startOver()">Add More Items</button>
+        <button onclick="downloadJSON()">Download JSON</button>
+        <button onclick="deleteData()">Delete Saved Details</button>
+    </div>
+
+    <!-- Out-of-Date Items Section -->
+    <div id="checkDates" class="out-of-date" style="display: block;">
+        <h2>Check Out-of-Date Items</h2>
+        <input type="file" id="jsonUpload" multiple accept=".json">
+        <button onclick="checkOutOfDateItems()">Check Out-of-Date Items</button>
+        <div id="outOfDateResults"></div>
+    </div>
+
+    <script>
+        let sections = {};
+        let currentItemIndex = 0;
+        let itemData = {}; // This object stores the data across sections
+        let currentSection = [];
+
+        function loadJSON() {
+            const jsonUrl = 'https://raw.githubusercontent.com/KiNGZIONSKY/OutofDateCheck/main/stock.json';
+            fetch(jsonUrl)
+                .then(response => response.json())
+                .then(json => {
+                    sections = json.sections;
+                    document.getElementById('fileUpload').style.display = 'none';
+                    document.getElementById('sectionSelect').style.display = 'block';
+                    generateSectionButtons();
+                })
+                .catch(error => {
+                    alert('Failed to load JSON file. Please check the URL or your network connection.');
+                    console.error('Error loading JSON:', error);
+                });
+        }
+
+        function generateSectionButtons() {
+            const sectionButtonsContainer = document.getElementById('sectionButtons');
+            sectionButtonsContainer.innerHTML = ''; // Clear any existing buttons
+
+            for (const section in sections) {
+                const button = document.createElement('button');
+                button.textContent = capitalizeFirstLetter(section);
+                button.onclick = () => startSection(section);
+                sectionButtonsContainer.appendChild(button);
+            }
+        }
+
+        function capitalizeFirstLetter(string) {
+            return string.charAt(0).toUpperCase() + string.slice(1);
+        }
+
+        document.getElementById('itemQuantity').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                submitAnswer();
+                event.preventDefault();
+            }
+        });
+
+        function startSection(section) {
+            currentSection = sections[section];
+            currentItemIndex = 0;
+            document.getElementById('sectionSelect').style.display = 'none';
+            document.getElementById('question').style.display = 'block';
+            askNextItem();
+        }
+
+        function submitAnswer() {
+            const sellByDate = document.getElementById('sellByDate').value;
+            const itemQuantity = document.getElementById('itemQuantity').value;
+            const currentItem = currentSection[currentItemIndex];
+            
+            if (sellByDate && itemQuantity > 0) {
+                // Store the data by appending to itemData object
+                if (!itemData[currentItem]) {
+                    itemData[currentItem] = [];
+                }
+                itemData[currentItem].push({ quantity: itemQuantity, sellByDate: sellByDate });
+            }
+
+            currentItemIndex++;
+            if (currentItemIndex < currentSection.length) {
+                askNextItem();
+            } else {
+                displaySummary();
+            }
+        }
+
+        function completeSection() {
+            displaySummary();
+        }
+
+        function goBack() {
+            if (currentItemIndex > 0) {
+                currentItemIndex--;
+                askNextItem();
+            }
+        }
+
+        function cancelSection() {
+            document.getElementById('sectionSelect').style.display = 'block';
+            document.getElementById('question').style.display = 'none';
+            currentItemIndex = 0;
+            currentSection = [];
+        }
+
+        function askNextItem() {
+            document.getElementById('sellByDate').value = '';
+            document.getElementById('itemQuantity').value = '';
+            document.getElementById('currentItem').textContent = `Enter details for ${currentSection[currentItemIndex]}:`;
+            document.getElementById('sellByDate').focus();
+        }
+
+        function displaySummary() {
+            const summaryList = document.getElementById('summaryList');
+            summaryList.innerHTML = '';
+
+            for (const [item, dataArray] of Object.entries(itemData)) {
+                dataArray.forEach(data => {
+                    const listItem = document.createElement("li");
+                    listItem.textContent = `${item}: Quantity - ${data.quantity}, Sell-By Date - ${data.sellByDate}`;
+                    summaryList.appendChild(listItem);
+                });
+            }
+        }
+
+        function downloadJSON() {
+            const jsonData = JSON.stringify(itemData, null, 2);
+            const blob = new Blob([jsonData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'inventory_data.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function deleteData() {
+            if (confirm("Are you sure you want to delete all saved details?")) {
+                itemData = {}; // Clear the item data
+                document.getElementById('summaryList').innerHTML = ''; // Clear the summary list
+                alert("All saved details have been deleted.");
+            }
+        }
+
+        function checkOutOfDateItems() {
+            const files = document.getElementById('jsonUpload').files;
+            const outOfDateResults = document.getElementById('outOfDateResults');
+            outOfDateResults.innerHTML = '';
+
+            if (files.length === 0) {
+                alert("Please upload one or more JSON files.");
+                return;
+            }
+
+            const currentDate = new Date().toISOString().split('T')[0];
+            let outOfDateItems = [];
+
+            for (let file of files) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const data = JSON.parse(event.target.result);
+
+                    for (const [item, details] of Object.entries(data)) {
+                        details.forEach(detail => {
+                            if (detail.sellByDate < currentDate) {
+                                outOfDateItems.push({ item, ...detail });
+                            }
+                        });
+                    }
+
+                    if (file === files[files.length - 1]) {
+                        displayOutOfDateItems(outOfDateItems);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        function displayOutOfDateItems(outOfDateItems) {
+            const outOfDateResults = document.getElementById('outOfDateResults');
+
+            if (outOfDateItems.length > 0) {
+                const table = document.createElement('table');
+                const thead = document.createElement('thead');
+                const tbody = document.createElement('tbody');
+
+                const headerRow = document.createElement('tr');
+                headerRow.innerHTML = `
+                    <th>Remove</th>
+                    <th>Item</th>
+                    <th>Quantity</th>
+                    <th>Sell-By Date</th>
+                `;
+                thead.appendChild(headerRow);
+
+                outOfDateItems.forEach(({ item, quantity, sellByDate }) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><input type="checkbox" onclick="toggleChecked(this)"></td>
+                        <td>${item}</td>
+                        <td>${quantity}</td>
+                        <td>${sellByDate}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+
+                table.appendChild(thead);
+                table.appendChild(tbody);
+                outOfDateResults.appendChild(table);
+            } else {
+                outOfDateResults.textContent = "No out-of-date items found.";
+            }
+        }
+
+        function toggleChecked(checkbox) {
+            const row = checkbox.parentNode.parentNode;
+            if (checkbox.checked) {
+                row.classList.add('checked-off');
+            } else {
+                row.classList.remove('checked-off');
+            }
+        }
+
+        // Initialize the page by displaying the section selection screen
+        function startOver() {
+            document.getElementById('sectionSelect').style.display = 'block'; // Show section selection
+            document.getElementById('question').style.display = 'none'; // Hide question section
+            currentItemIndex = 0;
+            currentSection = [];
+        }
+
+        startOver(); // Run this function when the page loads
+    </script>
+
+</body>
+</html>
